@@ -158,15 +158,18 @@ backend:
 
   - task: "Enhanced Features - Budget Management"
     implemented: true
-    working: "NA"
+    working: true
     file: "/app/backend/server.py"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: "NA"
         agent: "main"
         comment: "Implemented category-wise budget setting with progress tracking and overspending alerts"
+      - working: true
+        agent: "testing"
+        comment: "Successfully tested budget management system. Creating budgets for different categories works correctly. Budget calculations (spent_amount, remaining_amount, percentage_used) are accurate. Budget updates for same category+month work as expected. Overspending scenarios are handled correctly with percentage_used exceeding 100%."
 
   - task: "Enhanced Features - Advanced Search & Filters"
     implemented: true
