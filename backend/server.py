@@ -570,6 +570,31 @@ async def delete_transaction(transaction_id: str, current_user: dict = Depends(g
         raise HTTPException(status_code=404, detail="Transaction not found")
     return {"message": "Transaction deleted successfully"}
 
+@api_router.put("/transactions/{transaction_id}", response_model=TransactionResponse)
+async def update_transaction(transaction_id: str, transaction: TransactionCreate, current_user: dict = Depends(get_current_user)):
+    # Check if transaction exists and belongs to user
+    existing_transaction = await db.transactions.find_one({"id": transaction_id, "user_id": current_user["id"]})
+    if not existing_transaction:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    
+    # Update transaction
+    updated_data = {
+        "type": transaction.type,
+        "category": transaction.category,
+        "amount": transaction.amount,
+        "description": transaction.description,
+        "date": transaction.date or datetime.utcnow()
+    }
+    
+    await db.transactions.update_one(
+        {"id": transaction_id, "user_id": current_user["id"]},
+        {"$set": updated_data}
+    )
+    
+    # Return updated transaction
+    updated_transaction = await db.transactions.find_one({"id": transaction_id})
+    return TransactionResponse(**updated_transaction)
+
 # Process recurring transactions (would be called by a scheduled job)
 @api_router.post("/transactions/process-recurring")
 async def process_recurring_transactions():
