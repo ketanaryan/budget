@@ -486,13 +486,143 @@ const TransactionList = ({ transactions, onTransactionDeleted }) => {
 
   return (
     <div className="bg-white rounded-2xl shadow-lg p-6">
-      <h3 className="text-xl font-bold text-gray-800 mb-4">Recent Transactions</h3>
+      <h3 className="text-xl font-bold text-gray-800 mb-4">Transaction History</h3>
       
-      {transactions.length === 0 ? (
-        <p className="text-gray-500 text-center py-8">No transactions yet. Add your first transaction above!</p>
+      {/* Filters */}
+      <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+        <h4 className="text-sm font-medium text-gray-700 mb-3">Filter Transactions</h4>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm text-gray-600 mb-1">Type</label>
+            <select
+              value={filterType}
+              onChange={(e) => setFilterType(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+            >
+              <option value="all">All Types</option>
+              <option value="income">Income</option>
+              <option value="expense">Expense</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm text-gray-600 mb-1">Category</label>
+            <select
+              value={filterCategory}
+              onChange={(e) => setFilterCategory(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+            >
+              <option value="all">All Categories</option>
+              {categories.map(cat => (
+                <option key={cat.value} value={cat.value}>
+                  {cat.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {/* Edit Modal */}
+      {editingTransaction && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md mx-4">
+            <h3 className="text-xl font-bold text-gray-800 mb-4">Edit Transaction</h3>
+            <form onSubmit={handleUpdateTransaction} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Type</label>
+                <select
+                  name="type"
+                  value={editingTransaction.type}
+                  onChange={handleEditChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                >
+                  <option value="income">Income</option>
+                  <option value="expense">Expense</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
+                <select
+                  name="category"
+                  value={editingTransaction.category}
+                  onChange={handleEditChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                >
+                  {categories.map(cat => (
+                    <option key={cat.value} value={cat.value}>
+                      {cat.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Amount (₹)</label>
+                <input
+                  type="number"
+                  name="amount"
+                  value={editingTransaction.amount}
+                  onChange={handleEditChange}
+                  required
+                  step="0.01"
+                  min="0"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
+                <input
+                  type="text"
+                  name="description"
+                  value={editingTransaction.description}
+                  onChange={handleEditChange}
+                  required
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Date</label>
+                <input
+                  type="date"
+                  name="date"
+                  value={editingTransaction.date}
+                  onChange={handleEditChange}
+                  required
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                />
+              </div>
+              <div className="flex space-x-3 pt-4">
+                <button
+                  type="submit"
+                  className="flex-1 bg-gradient-to-r from-purple-500 to-pink-500 text-white py-2 px-4 rounded-lg font-medium hover:from-purple-600 hover:to-pink-600 transition-all"
+                >
+                  Update
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditingTransaction(null)}
+                  className="flex-1 bg-gray-300 text-gray-700 py-2 px-4 rounded-lg font-medium hover:bg-gray-400 transition-all"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      
+      {filteredTransactions.length === 0 ? (
+        <p className="text-gray-500 text-center py-8">
+          {transactions.length === 0 
+            ? "No transactions yet. Add your first transaction above!" 
+            : "No transactions match your current filters."
+          }
+        </p>
       ) : (
         <div className="space-y-3">
-          {transactions.map((transaction) => (
+          <p className="text-sm text-gray-600 mb-4">
+            Showing {filteredTransactions.length} of {transactions.length} transactions
+          </p>
+          {filteredTransactions.map((transaction) => (
             <div
               key={transaction.id}
               className={`p-4 rounded-lg border-l-4 ${
@@ -516,12 +646,20 @@ const TransactionList = ({ transactions, onTransactionDeleted }) => {
                   }`}>
                     {transaction.type === 'income' ? '+' : '-'}{formatCurrency(transaction.amount)}
                   </p>
-                  <button
-                    onClick={() => handleDelete(transaction.id)}
-                    className="text-red-500 hover:text-red-700 text-sm mt-1"
-                  >
-                    Delete
-                  </button>
+                  <div className="flex space-x-2 mt-1">
+                    <button
+                      onClick={() => handleEdit(transaction)}
+                      className="text-blue-500 hover:text-blue-700 text-sm hover:underline"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => handleDelete(transaction.id)}
+                      className="text-red-500 hover:text-red-700 text-sm hover:underline"
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
