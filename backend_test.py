@@ -8,7 +8,7 @@ import unittest
 import os
 
 # Get the backend URL from the frontend .env file
-BACKEND_URL = "https://9af3cf19-e394-4087-b5b6-9f6d1b23a7f2.preview.emergentagent.com/api"
+BACKEND_URL = "https://3fae46a5-2028-44b5-8b3f-3b12668ee782.preview.emergentagent.com/api"
 
 class BudgetPlannerAPITest(unittest.TestCase):
     @classmethod
