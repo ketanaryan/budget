@@ -1118,14 +1118,9 @@ class BudgetPlannerAPITest(unittest.TestCase):
         # Test currency conversion endpoint
         test_amount = 100
         
-        # USD to INR
+        # USD to INR - using query parameters
         response = requests.post(
-            f"{BACKEND_URL}/currency/convert",
-            json={
-                "amount": test_amount,
-                "from_currency": "USD",
-                "to_currency": "INR"
-            }
+            f"{BACKEND_URL}/currency/convert?amount={test_amount}&from_currency=USD&to_currency=INR"
         )
         
         self.assertEqual(response.status_code, 200, f"USD to INR conversion failed: {response.text}")
@@ -1140,14 +1135,9 @@ class BudgetPlannerAPITest(unittest.TestCase):
         
         print(f"Successfully converted {test_amount} USD to {usd_to_inr['converted_amount']} INR (rate: {usd_to_inr['rate']})")
         
-        # INR to USD
+        # INR to USD - using query parameters
         response = requests.post(
-            f"{BACKEND_URL}/currency/convert",
-            json={
-                "amount": test_amount,
-                "from_currency": "INR",
-                "to_currency": "USD"
-            }
+            f"{BACKEND_URL}/currency/convert?amount={test_amount}&from_currency=INR&to_currency=USD"
         )
         
         self.assertEqual(response.status_code, 200, f"INR to USD conversion failed: {response.text}")
@@ -1164,12 +1154,7 @@ class BudgetPlannerAPITest(unittest.TestCase):
         
         # Same currency conversion (should return same amount)
         response = requests.post(
-            f"{BACKEND_URL}/currency/convert",
-            json={
-                "amount": test_amount,
-                "from_currency": "USD",
-                "to_currency": "USD"
-            }
+            f"{BACKEND_URL}/currency/convert?amount={test_amount}&from_currency=USD&to_currency=USD"
         )
         
         self.assertEqual(response.status_code, 200, f"Same currency conversion failed: {response.text}")
