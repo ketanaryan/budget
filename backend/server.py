@@ -659,8 +659,12 @@ async def update_transaction(transaction_id: str, transaction: TransactionCreate
         "type": transaction.type,
         "category": transaction.category,
         "amount": transaction.amount,
+        "currency": transaction.currency,
         "description": transaction.description,
-        "date": transaction.date or datetime.utcnow()
+        "date": transaction.date or datetime.utcnow(),
+        "tags": transaction.tags,
+        "is_recurring": transaction.is_recurring,
+        "recurrence_type": transaction.recurrence_type
     }
     
     await db.transactions.update_one(
