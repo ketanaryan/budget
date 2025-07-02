@@ -542,7 +542,8 @@ async def create_budget(budget: BudgetCreate, current_user: dict = Depends(get_c
     existing_budget = await db.budgets.find_one({
         "user_id": current_user["id"],
         "category": budget.category,
-        "month": budget.month
+        "month": budget.month,
+        "currency": budget.currency
     })
     
     if existing_budget:
@@ -559,6 +560,7 @@ async def create_budget(budget: BudgetCreate, current_user: dict = Depends(get_c
             user_id=current_user["id"],
             category=budget.category,
             budget_amount=budget.budget_amount,
+            currency=budget.currency,
             month=budget.month
         )
         await db.budgets.insert_one(budget_obj.dict())
@@ -577,6 +579,7 @@ async def create_budget(budget: BudgetCreate, current_user: dict = Depends(get_c
             "user_id": current_user["id"],
             "category": budget.category,
             "type": "expense",
+            "currency": budget.currency,
             "date": {"$gte": start_date, "$lt": end_date}
         }).to_list(1000)
         spent_amount = sum(t["amount"] for t in transactions)
@@ -588,6 +591,7 @@ async def create_budget(budget: BudgetCreate, current_user: dict = Depends(get_c
         id=budget_obj["id"],
         category=budget_obj["category"],
         budget_amount=budget_obj["budget_amount"],
+        currency=budget_obj.get("currency", "INR"),
         month=budget_obj["month"],
         spent_amount=spent_amount,
         remaining_amount=remaining_amount,
