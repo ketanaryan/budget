@@ -103,6 +103,7 @@ class Budget(BaseModel):
 class BudgetCreate(BaseModel):
     category: TransactionCategory
     budget_amount: float
+    currency: Currency = Currency.INR
     month: str
 
 class BudgetResponse(BaseModel):
