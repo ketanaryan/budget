@@ -968,5 +968,613 @@ class BudgetPlannerAPITest(unittest.TestCase):
             self.assertEqual(response.status_code, 404, "Deleting another user's transaction should return 404")
             print("Deleting another user's transaction correctly returns 404")
 
+    def test_17_multi_currency_transactions(self):
+        """Test creating transactions with different currencies"""
+        print("\n=== Testing Multi-Currency Transactions ===")
+        
+        headers = {"Authorization": f"Bearer {self.__class__.auth_token}"}
+        
+        # Test creating USD income transaction
+        usd_income = {
+            "type": "income",
+            "category": random.choice(self.income_categories),
+            "amount": round(random.uniform(100, 1000), 2),  # USD amount
+            "currency": "USD",
+            "description": "Test USD income transaction",
+            "date": datetime.utcnow().isoformat()
+        }
+        
+        response = requests.post(
+            f"{BACKEND_URL}/transactions",
+            headers=headers,
+            json=usd_income
+        )
+        
+        self.assertEqual(response.status_code, 200, f"Create USD income transaction failed: {response.text}")
+        usd_income_data = response.json()
+        self.__class__.created_transaction_ids.append(usd_income_data["id"])
+        
+        # Verify USD transaction data
+        self.assertEqual(usd_income_data["currency"], "USD", "Currency should be USD")
+        self.assertEqual(usd_income_data["amount"], usd_income["amount"], "Amount mismatch")
+        print(f"Successfully created USD income transaction of ${usd_income_data['amount']}")
+        
+        # Test creating USD expense transaction
+        usd_expense = {
+            "type": "expense",
+            "category": random.choice(self.expense_categories),
+            "amount": round(random.uniform(50, 500), 2),  # USD amount
+            "currency": "USD",
+            "description": "Test USD expense transaction",
+            "date": datetime.utcnow().isoformat()
+        }
+        
+        response = requests.post(
+            f"{BACKEND_URL}/transactions",
+            headers=headers,
+            json=usd_expense
+        )
+        
+        self.assertEqual(response.status_code, 200, f"Create USD expense transaction failed: {response.text}")
+        usd_expense_data = response.json()
+        self.__class__.created_transaction_ids.append(usd_expense_data["id"])
+        
+        # Verify USD transaction data
+        self.assertEqual(usd_expense_data["currency"], "USD", "Currency should be USD")
+        self.assertEqual(usd_expense_data["amount"], usd_expense["amount"], "Amount mismatch")
+        print(f"Successfully created USD expense transaction of ${usd_expense_data['amount']}")
+        
+        # Test creating INR transaction explicitly
+        inr_transaction = {
+            "type": "expense",
+            "category": random.choice(self.expense_categories),
+            "amount": round(random.uniform(1000, 5000), 2),
+            "currency": "INR",
+            "description": "Test explicit INR transaction",
+            "date": datetime.utcnow().isoformat()
+        }
+        
+        response = requests.post(
+            f"{BACKEND_URL}/transactions",
+            headers=headers,
+            json=inr_transaction
+        )
+        
+        self.assertEqual(response.status_code, 200, f"Create explicit INR transaction failed: {response.text}")
+        inr_data = response.json()
+        self.__class__.created_transaction_ids.append(inr_data["id"])
+        
+        # Verify INR transaction data
+        self.assertEqual(inr_data["currency"], "INR", "Currency should be INR")
+        print(f"Successfully created explicit INR transaction of ₹{inr_data['amount']}")
+        
+        # Test default currency (should be INR)
+        default_transaction = {
+            "type": "expense",
+            "category": random.choice(self.expense_categories),
+            "amount": round(random.uniform(1000, 5000), 2),
+            "description": "Test default currency transaction",
+            "date": datetime.utcnow().isoformat()
+        }
+        
+        response = requests.post(
+            f"{BACKEND_URL}/transactions",
+            headers=headers,
+            json=default_transaction
+        )
+        
+        self.assertEqual(response.status_code, 200, f"Create default currency transaction failed: {response.text}")
+        default_data = response.json()
+        self.__class__.created_transaction_ids.append(default_data["id"])
+        
+        # Verify default currency is INR
+        self.assertEqual(default_data["currency"], "INR", "Default currency should be INR")
+        print(f"Successfully created default currency transaction (INR) of ₹{default_data['amount']}")
+        
+        # Retrieve transactions and verify currencies are preserved
+        response = requests.get(
+            f"{BACKEND_URL}/transactions",
+            headers=headers
+        )
+        
+        self.assertEqual(response.status_code, 200, f"Get transactions failed: {response.text}")
+        transactions = response.json()
+        
+        # Find our test transactions
+        for transaction_id in [usd_income_data["id"], usd_expense_data["id"], inr_data["id"], default_data["id"]]:
+            transaction = next((t for t in transactions if t["id"] == transaction_id), None)
+            self.assertIsNotNone(transaction, f"Transaction {transaction_id} not found")
+            
+            if transaction_id in [usd_income_data["id"], usd_expense_data["id"]]:
+                self.assertEqual(transaction["currency"], "USD", f"Transaction {transaction_id} should have USD currency")
+            else:
+                self.assertEqual(transaction["currency"], "INR", f"Transaction {transaction_id} should have INR currency")
+        
+        print("Multi-currency transactions are correctly stored and retrieved")
+
+    def test_18_currency_conversion(self):
+        """Test currency conversion endpoints"""
+        print("\n=== Testing Currency Conversion ===")
+        
+        # Test getting currency rates
+        response = requests.get(f"{BACKEND_URL}/currency/rates")
+        
+        self.assertEqual(response.status_code, 200, f"Get currency rates failed: {response.text}")
+        rates_data = response.json()
+        
+        # Verify rates data structure
+        self.assertIn("USD_to_INR", rates_data, "USD to INR rate missing")
+        self.assertIn("INR_to_USD", rates_data, "INR to USD rate missing")
+        self.assertIn("last_updated", rates_data, "Last updated timestamp missing")
+        
+        # Verify rates are reasonable
+        self.assertGreater(rates_data["USD_to_INR"], 70, "USD to INR rate seems too low")
+        self.assertLess(rates_data["USD_to_INR"], 100, "USD to INR rate seems too high")
+        self.assertGreater(rates_data["INR_to_USD"], 0.01, "INR to USD rate seems too low")
+        self.assertLess(rates_data["INR_to_USD"], 0.02, "INR to USD rate seems too high")
+        
+        print(f"Successfully retrieved currency rates: 1 USD = {rates_data['USD_to_INR']} INR, 1 INR = {rates_data['INR_to_USD']} USD")
+        
+        # Test currency conversion endpoint
+        test_amount = 100
+        
+        # USD to INR
+        response = requests.post(
+            f"{BACKEND_URL}/currency/convert",
+            json={
+                "amount": test_amount,
+                "from_currency": "USD",
+                "to_currency": "INR"
+            }
+        )
+        
+        self.assertEqual(response.status_code, 200, f"USD to INR conversion failed: {response.text}")
+        usd_to_inr = response.json()
+        
+        # Verify conversion data
+        self.assertEqual(usd_to_inr["original_amount"], test_amount, "Original amount mismatch")
+        self.assertEqual(usd_to_inr["from_currency"], "USD", "From currency mismatch")
+        self.assertEqual(usd_to_inr["to_currency"], "INR", "To currency mismatch")
+        self.assertGreater(usd_to_inr["converted_amount"], test_amount, "USD to INR conversion should increase the amount")
+        self.assertEqual(usd_to_inr["converted_amount"], round(test_amount * usd_to_inr["rate"], 2), "Conversion calculation incorrect")
+        
+        print(f"Successfully converted {test_amount} USD to {usd_to_inr['converted_amount']} INR (rate: {usd_to_inr['rate']})")
+        
+        # INR to USD
+        response = requests.post(
+            f"{BACKEND_URL}/currency/convert",
+            json={
+                "amount": test_amount,
+                "from_currency": "INR",
+                "to_currency": "USD"
+            }
+        )
+        
+        self.assertEqual(response.status_code, 200, f"INR to USD conversion failed: {response.text}")
+        inr_to_usd = response.json()
+        
+        # Verify conversion data
+        self.assertEqual(inr_to_usd["original_amount"], test_amount, "Original amount mismatch")
+        self.assertEqual(inr_to_usd["from_currency"], "INR", "From currency mismatch")
+        self.assertEqual(inr_to_usd["to_currency"], "USD", "To currency mismatch")
+        self.assertLess(inr_to_usd["converted_amount"], test_amount, "INR to USD conversion should decrease the amount")
+        self.assertEqual(inr_to_usd["converted_amount"], round(test_amount * inr_to_usd["rate"], 2), "Conversion calculation incorrect")
+        
+        print(f"Successfully converted {test_amount} INR to {inr_to_usd['converted_amount']} USD (rate: {inr_to_usd['rate']})")
+        
+        # Same currency conversion (should return same amount)
+        response = requests.post(
+            f"{BACKEND_URL}/currency/convert",
+            json={
+                "amount": test_amount,
+                "from_currency": "USD",
+                "to_currency": "USD"
+            }
+        )
+        
+        self.assertEqual(response.status_code, 200, f"Same currency conversion failed: {response.text}")
+        same_currency = response.json()
+        
+        # Verify same currency conversion
+        self.assertEqual(same_currency["converted_amount"], test_amount, "Same currency conversion should return same amount")
+        self.assertEqual(same_currency["rate"], 1.0, "Same currency rate should be 1.0")
+        
+        print(f"Successfully verified same currency conversion: {test_amount} USD = {same_currency['converted_amount']} USD")
+
+    def test_19_multi_currency_budgets(self):
+        """Test budgets with different currencies"""
+        print("\n=== Testing Multi-Currency Budgets ===")
+        
+        headers = {"Authorization": f"Bearer {self.__class__.auth_token}"}
+        current_month = datetime.utcnow().strftime("%Y-%m")
+        
+        # Create USD budget
+        usd_budget = {
+            "category": random.choice(self.expense_categories),
+            "budget_amount": round(random.uniform(100, 1000), 2),
+            "currency": "USD",
+            "month": current_month
+        }
+        
+        response = requests.post(
+            f"{BACKEND_URL}/budgets",
+            headers=headers,
+            json=usd_budget
+        )
+        
+        self.assertEqual(response.status_code, 200, f"Create USD budget failed: {response.text}")
+        usd_budget_data = response.json()
+        self.__class__.created_budget_ids.append(usd_budget_data["id"])
+        
+        # Verify USD budget
+        self.assertEqual(usd_budget_data["currency"], "USD", "Budget currency should be USD")
+        self.assertEqual(usd_budget_data["budget_amount"], usd_budget["budget_amount"], "Budget amount mismatch")
+        print(f"Successfully created USD budget for {usd_budget_data['category']}: ${usd_budget_data['budget_amount']}")
+        
+        # Create INR budget for the same category (should be allowed since currency is different)
+        inr_budget = {
+            "category": usd_budget["category"],  # Same category as USD budget
+            "budget_amount": round(random.uniform(5000, 20000), 2),
+            "currency": "INR",
+            "month": current_month
+        }
+        
+        response = requests.post(
+            f"{BACKEND_URL}/budgets",
+            headers=headers,
+            json=inr_budget
+        )
+        
+        self.assertEqual(response.status_code, 200, f"Create INR budget for same category failed: {response.text}")
+        inr_budget_data = response.json()
+        self.__class__.created_budget_ids.append(inr_budget_data["id"])
+        
+        # Verify INR budget
+        self.assertEqual(inr_budget_data["currency"], "INR", "Budget currency should be INR")
+        self.assertEqual(inr_budget_data["budget_amount"], inr_budget["budget_amount"], "Budget amount mismatch")
+        print(f"Successfully created INR budget for same category {inr_budget_data['category']}: ₹{inr_budget_data['budget_amount']}")
+        
+        # Create USD expense for the budget category
+        usd_expense = {
+            "type": "expense",
+            "category": usd_budget["category"],
+            "amount": usd_budget["budget_amount"] * 0.5,  # 50% of budget
+            "currency": "USD",
+            "description": "Test USD expense for budget",
+            "date": datetime.utcnow().isoformat()
+        }
+        
+        response = requests.post(
+            f"{BACKEND_URL}/transactions",
+            headers=headers,
+            json=usd_expense
+        )
+        
+        self.assertEqual(response.status_code, 200, f"Create USD expense for budget failed: {response.text}")
+        usd_expense_data = response.json()
+        self.__class__.created_transaction_ids.append(usd_expense_data["id"])
+        print(f"Created USD expense of ${usd_expense['amount']} for budget category {usd_budget['category']}")
+        
+        # Create INR expense for the same budget category
+        inr_expense = {
+            "type": "expense",
+            "category": inr_budget["category"],
+            "amount": inr_budget["budget_amount"] * 0.5,  # 50% of budget
+            "currency": "INR",
+            "description": "Test INR expense for budget",
+            "date": datetime.utcnow().isoformat()
+        }
+        
+        response = requests.post(
+            f"{BACKEND_URL}/transactions",
+            headers=headers,
+            json=inr_expense
+        )
+        
+        self.assertEqual(response.status_code, 200, f"Create INR expense for budget failed: {response.text}")
+        inr_expense_data = response.json()
+        self.__class__.created_transaction_ids.append(inr_expense_data["id"])
+        print(f"Created INR expense of ₹{inr_expense['amount']} for budget category {inr_budget['category']}")
+        
+        # Get budgets and verify spent amounts are calculated correctly
+        response = requests.get(
+            f"{BACKEND_URL}/budgets?month={current_month}",
+            headers=headers
+        )
+        
+        self.assertEqual(response.status_code, 200, f"Get budgets failed: {response.text}")
+        budgets = response.json()
+        
+        # Find our test budgets
+        usd_budget_updated = next((b for b in budgets if b["id"] == usd_budget_data["id"]), None)
+        inr_budget_updated = next((b for b in budgets if b["id"] == inr_budget_data["id"]), None)
+        
+        self.assertIsNotNone(usd_budget_updated, "USD budget not found")
+        self.assertIsNotNone(inr_budget_updated, "INR budget not found")
+        
+        # Verify USD budget spent amount (should only include USD transactions)
+        self.assertAlmostEqual(usd_budget_updated["spent_amount"], usd_expense["amount"], places=2, 
+                             msg="USD budget spent amount incorrect")
+        self.assertAlmostEqual(usd_budget_updated["percentage_used"], 50.0, places=2, 
+                             msg="USD budget percentage used incorrect")
+        
+        # Verify INR budget spent amount (should only include INR transactions)
+        self.assertAlmostEqual(inr_budget_updated["spent_amount"], inr_expense["amount"], places=2, 
+                             msg="INR budget spent amount incorrect")
+        self.assertAlmostEqual(inr_budget_updated["percentage_used"], 50.0, places=2, 
+                             msg="INR budget percentage used incorrect")
+        
+        print("Multi-currency budgets are correctly tracked with currency-specific expenses")
+
+    def test_20_enhanced_analytics_financial_insights(self):
+        """Test financial insights analytics endpoint"""
+        print("\n=== Testing Enhanced Analytics: Financial Insights ===")
+        
+        headers = {"Authorization": f"Bearer {self.__class__.auth_token}"}
+        
+        # Test with default days parameter
+        response = requests.get(
+            f"{BACKEND_URL}/analytics/financial-insights",
+            headers=headers
+        )
+        
+        self.assertEqual(response.status_code, 200, f"Get financial insights failed: {response.text}")
+        insights = response.json()
+        
+        # Verify insights structure
+        self.assertIn("total_income", insights, "total_income field missing")
+        self.assertIn("total_expense", insights, "total_expense field missing")
+        self.assertIn("net_amount", insights, "net_amount field missing")
+        self.assertIn("top_spending_categories", insights, "top_spending_categories field missing")
+        self.assertIn("spending_trend", insights, "spending_trend field missing")
+        self.assertIn("average_daily_expense", insights, "average_daily_expense field missing")
+        self.assertIn("highest_expense_day", insights, "highest_expense_day field missing")
+        self.assertIn("savings_rate", insights, "savings_rate field missing")
+        
+        # Verify currency-specific totals
+        self.assertIn("INR", insights["total_income"], "INR income missing")
+        self.assertIn("USD", insights["total_income"], "USD income missing")
+        self.assertIn("INR", insights["total_expense"], "INR expense missing")
+        self.assertIn("USD", insights["total_expense"], "USD expense missing")
+        self.assertIn("INR", insights["net_amount"], "INR net amount missing")
+        self.assertIn("USD", insights["net_amount"], "USD net amount missing")
+        
+        # Verify top spending categories
+        self.assertIsInstance(insights["top_spending_categories"], list, "top_spending_categories should be a list")
+        if insights["top_spending_categories"]:
+            category = insights["top_spending_categories"][0]
+            self.assertIn("category", category, "category field missing in top spending category")
+            self.assertIn("amount", category, "amount field missing in top spending category")
+            self.assertIn("currency", category, "currency field missing in top spending category")
+        
+        # Verify spending trend
+        self.assertIn(insights["spending_trend"], ["increasing", "decreasing", "stable"], 
+                     f"Invalid spending trend: {insights['spending_trend']}")
+        
+        # Verify average daily expense
+        self.assertIn("INR", insights["average_daily_expense"], "INR average daily expense missing")
+        self.assertIn("USD", insights["average_daily_expense"], "USD average daily expense missing")
+        
+        # Verify savings rate is a percentage
+        self.assertGreaterEqual(insights["savings_rate"], 0, "Savings rate should be non-negative")
+        self.assertLessEqual(insights["savings_rate"], 100, "Savings rate should be at most 100%")
+        
+        print(f"Successfully retrieved financial insights with spending trend: {insights['spending_trend']}")
+        print(f"Savings rate: {insights['savings_rate']}%")
+        print(f"Total income: ₹{insights['total_income']['INR']} / ${insights['total_income']['USD']}")
+        print(f"Total expense: ₹{insights['total_expense']['INR']} / ${insights['total_expense']['USD']}")
+        
+        # Test with custom days parameter
+        custom_days = 7
+        response = requests.get(
+            f"{BACKEND_URL}/analytics/financial-insights?days={custom_days}",
+            headers=headers
+        )
+        
+        self.assertEqual(response.status_code, 200, f"Get financial insights with custom days failed: {response.text}")
+        custom_insights = response.json()
+        
+        # Basic verification for custom days
+        self.assertIn("total_income", custom_insights, "total_income field missing in custom days response")
+        print(f"Successfully retrieved financial insights for {custom_days} days")
+
+    def test_21_enhanced_analytics_category_breakdown(self):
+        """Test category breakdown analytics endpoint"""
+        print("\n=== Testing Enhanced Analytics: Category Breakdown ===")
+        
+        headers = {"Authorization": f"Bearer {self.__class__.auth_token}"}
+        
+        response = requests.get(
+            f"{BACKEND_URL}/analytics/category-breakdown",
+            headers=headers
+        )
+        
+        self.assertEqual(response.status_code, 200, f"Get category breakdown failed: {response.text}")
+        breakdown = response.json()
+        
+        # Verify breakdown is a list
+        self.assertIsInstance(breakdown, list, "Category breakdown should be a list")
+        
+        # Verify breakdown structure if we have data
+        if breakdown:
+            for category_data in breakdown:
+                self.assertIn("category", category_data, "category field missing")
+                self.assertIn("type", category_data, "type field missing")
+                self.assertIn("total_amount", category_data, "total_amount field missing")
+                self.assertIn("currency", category_data, "currency field missing")
+                self.assertIn("percentage", category_data, "percentage field missing")
+                self.assertIn("transactions_count", category_data, "transactions_count field missing")
+                
+                # Verify percentage is valid
+                self.assertGreaterEqual(category_data["percentage"], 0, "Percentage should be non-negative")
+                self.assertLessEqual(category_data["percentage"], 100, "Percentage should be at most 100%")
+                
+                # Verify currency is valid
+                self.assertIn(category_data["currency"], ["INR", "USD"], f"Invalid currency: {category_data['currency']}")
+                
+                print(f"{category_data['category']} ({category_data['type']}): " +
+                     f"{'₹' if category_data['currency'] == 'INR' else '$'}{category_data['total_amount']} " +
+                     f"({category_data['percentage']}%, {category_data['transactions_count']} transactions)")
+        
+        print(f"Successfully retrieved category breakdown with {len(breakdown)} categories")
+
+    def test_22_enhanced_analytics_spending_trends(self):
+        """Test spending trends analytics endpoint with different periods"""
+        print("\n=== Testing Enhanced Analytics: Spending Trends ===")
+        
+        headers = {"Authorization": f"Bearer {self.__class__.auth_token}"}
+        
+        # Test daily period
+        response = requests.get(
+            f"{BACKEND_URL}/analytics/spending-trends?period=daily&days=30",
+            headers=headers
+        )
+        
+        self.assertEqual(response.status_code, 200, f"Get daily spending trends failed: {response.text}")
+        daily_trends = response.json()
+        
+        # Verify trends structure
+        self.assertEqual(daily_trends["period"], "daily", "Period should be daily")
+        self.assertIsInstance(daily_trends["data"], list, "Trends data should be a list")
+        
+        # Verify data structure if we have data
+        if daily_trends["data"]:
+            for day_data in daily_trends["data"]:
+                self.assertIn("date", day_data, "date field missing")
+                self.assertIn("income", day_data, "income field missing")
+                self.assertIn("expense", day_data, "expense field missing")
+                self.assertIn("net", day_data, "net field missing")
+                self.assertIn("currency", day_data, "currency field missing")
+                
+                # Verify net calculation
+                self.assertEqual(day_data["net"], day_data["income"] - day_data["expense"], 
+                               "Net calculation incorrect")
+            
+            print(f"Successfully retrieved daily spending trends with {len(daily_trends['data'])} days")
+        
+        # Test weekly period
+        response = requests.get(
+            f"{BACKEND_URL}/analytics/spending-trends?period=weekly&days=60",
+            headers=headers
+        )
+        
+        self.assertEqual(response.status_code, 200, f"Get weekly spending trends failed: {response.text}")
+        weekly_trends = response.json()
+        
+        # Verify trends structure
+        self.assertEqual(weekly_trends["period"], "weekly", "Period should be weekly")
+        self.assertIsInstance(weekly_trends["data"], list, "Trends data should be a list")
+        
+        # Verify data structure if we have data
+        if weekly_trends["data"]:
+            for week_data in weekly_trends["data"]:
+                self.assertIn("date", week_data, "date field missing")
+                self.assertRegex(week_data["date"], r"^\d{4}-W\d{2}$", 
+                               f"Weekly date format incorrect: {week_data['date']}")
+            
+            print(f"Successfully retrieved weekly spending trends with {len(weekly_trends['data'])} weeks")
+        
+        # Test monthly period
+        response = requests.get(
+            f"{BACKEND_URL}/analytics/spending-trends?period=monthly&days=90",
+            headers=headers
+        )
+        
+        self.assertEqual(response.status_code, 200, f"Get monthly spending trends failed: {response.text}")
+        monthly_trends = response.json()
+        
+        # Verify trends structure
+        self.assertEqual(monthly_trends["period"], "monthly", "Period should be monthly")
+        self.assertIsInstance(monthly_trends["data"], list, "Trends data should be a list")
+        
+        # Verify data structure if we have data
+        if monthly_trends["data"]:
+            for month_data in monthly_trends["data"]:
+                self.assertIn("date", month_data, "date field missing")
+                self.assertRegex(month_data["date"], r"^\d{4}-\d{2}$", 
+                               f"Monthly date format incorrect: {month_data['date']}")
+            
+            print(f"Successfully retrieved monthly spending trends with {len(monthly_trends['data'])} months")
+        
+        # Test invalid period (should default to daily)
+        response = requests.get(
+            f"{BACKEND_URL}/analytics/spending-trends?period=invalid&days=30",
+            headers=headers
+        )
+        
+        self.assertEqual(response.status_code, 200, f"Get spending trends with invalid period failed: {response.text}")
+        invalid_period_trends = response.json()
+        
+        # Should default to monthly
+        self.assertEqual(invalid_period_trends["period"], "monthly", "Invalid period should default to monthly")
+        print("Invalid period correctly handled")
+
+    def test_23_enhanced_analytics_budget_progress(self):
+        """Test budget progress analytics endpoint"""
+        print("\n=== Testing Enhanced Analytics: Budget Progress ===")
+        
+        headers = {"Authorization": f"Bearer {self.__class__.auth_token}"}
+        current_month = datetime.utcnow().strftime("%Y-%m")
+        
+        # Test with current month
+        response = requests.get(
+            f"{BACKEND_URL}/analytics/budget-progress?month={current_month}",
+            headers=headers
+        )
+        
+        self.assertEqual(response.status_code, 200, f"Get budget progress failed: {response.text}")
+        progress = response.json()
+        
+        # Verify progress is a list
+        self.assertIsInstance(progress, list, "Budget progress should be a list")
+        
+        # Verify progress structure if we have data
+        if progress:
+            for budget_progress in progress:
+                self.assertIn("category", budget_progress, "category field missing")
+                self.assertIn("budget_amount", budget_progress, "budget_amount field missing")
+                self.assertIn("spent_amount", budget_progress, "spent_amount field missing")
+                self.assertIn("remaining_amount", budget_progress, "remaining_amount field missing")
+                self.assertIn("percentage_used", budget_progress, "percentage_used field missing")
+                self.assertIn("currency", budget_progress, "currency field missing")
+                self.assertIn("status", budget_progress, "status field missing")
+                
+                # Verify calculations
+                self.assertEqual(budget_progress["remaining_amount"], 
+                               budget_progress["budget_amount"] - budget_progress["spent_amount"],
+                               "remaining_amount calculation incorrect")
+                
+                # Verify status is valid
+                self.assertIn(budget_progress["status"], ["over_budget", "on_track", "warning"], 
+                             f"Invalid status: {budget_progress['status']}")
+                
+                # Verify status logic
+                if budget_progress["percentage_used"] > 100:
+                    self.assertEqual(budget_progress["status"], "over_budget", "Status should be over_budget")
+                elif budget_progress["percentage_used"] < 80:
+                    self.assertEqual(budget_progress["status"], "on_track", "Status should be on_track")
+                else:
+                    self.assertEqual(budget_progress["status"], "warning", "Status should be warning")
+                
+                print(f"{budget_progress['category']} budget: " +
+                     f"{'₹' if budget_progress['currency'] == 'INR' else '$'}{budget_progress['spent_amount']} of " +
+                     f"{'₹' if budget_progress['currency'] == 'INR' else '$'}{budget_progress['budget_amount']} " +
+                     f"({budget_progress['percentage_used']}%, status: {budget_progress['status']})")
+        
+        print(f"Successfully retrieved budget progress for {current_month} with {len(progress)} budgets")
+        
+        # Test with default month (should be current month)
+        response = requests.get(
+            f"{BACKEND_URL}/analytics/budget-progress",
+            headers=headers
+        )
+        
+        self.assertEqual(response.status_code, 200, f"Get budget progress with default month failed: {response.text}")
+        default_progress = response.json()
+        
+        # Basic verification for default month
+        self.assertIsInstance(default_progress, list, "Budget progress with default month should be a list")
+        print(f"Successfully retrieved budget progress with default month")
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
