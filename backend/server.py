@@ -47,6 +47,10 @@ class RecurrenceType(str, Enum):
     MONTHLY = "monthly"
     YEARLY = "yearly"
 
+class Currency(str, Enum):
+    INR = "INR"
+    USD = "USD"
+
 class TransactionCategory(str, Enum):
     # Income categories
     SALARY = "salary"
