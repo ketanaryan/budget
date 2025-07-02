@@ -695,6 +695,7 @@ async def process_recurring_transactions():
             type=recurring_transaction["type"],
             category=recurring_transaction["category"],
             amount=recurring_transaction["amount"],
+            currency=recurring_transaction.get("currency", "INR"),
             description=f"{recurring_transaction['description']} (Auto-generated)",
             date=recurring_transaction["next_occurrence"],
             tags=recurring_transaction["tags"],
