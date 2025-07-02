@@ -711,6 +711,308 @@ async def process_recurring_transactions():
     
     return {"message": f"Processed {len(new_transactions)} recurring transactions"}
 
+# Enhanced Analytics Routes
+@api_router.get("/analytics/financial-insights")
+async def get_financial_insights(days: int = 30, current_user: dict = Depends(get_current_user)):
+    """Get comprehensive financial insights"""
+    end_date = datetime.utcnow()
+    start_date = end_date - timedelta(days=days)
+    
+    # Get all transactions for the period
+    transactions = await db.transactions.find({
+        "user_id": current_user["id"],
+        "date": {"$gte": start_date, "$lte": end_date}
+    }).to_list(1000)
+    
+    # Calculate totals by currency
+    income_by_currency = {"INR": 0, "USD": 0}
+    expense_by_currency = {"INR": 0, "USD": 0}
+    
+    for t in transactions:
+        currency = t.get("currency", "INR")
+        if t["type"] == "income":
+            income_by_currency[currency] += t["amount"]
+        else:
+            expense_by_currency[currency] += t["amount"]
+    
+    # Calculate net amounts
+    net_by_currency = {
+        "INR": income_by_currency["INR"] - expense_by_currency["INR"],
+        "USD": income_by_currency["USD"] - expense_by_currency["USD"]
+    }
+    
+    # Get top spending categories
+    category_spending = {}
+    for t in transactions:
+        if t["type"] == "expense":
+            category = t["category"]
+            currency = t.get("currency", "INR")
+            key = f"{category}_{currency}"
+            category_spending[key] = category_spending.get(key, 0) + t["amount"]
+    
+    top_categories = sorted(
+        [{"category": k.split("_")[0], "currency": k.split("_")[1], "amount": v} 
+         for k, v in category_spending.items()],
+        key=lambda x: x["amount"], reverse=True
+    )[:5]
+    
+    # Calculate spending trend
+    mid_point = len(transactions) // 2
+    first_half_expense = sum(t["amount"] for t in transactions[:mid_point] if t["type"] == "expense")
+    second_half_expense = sum(t["amount"] for t in transactions[mid_point:] if t["type"] == "expense")
+    
+    if second_half_expense > first_half_expense * 1.1:
+        trend = "increasing"
+    elif second_half_expense < first_half_expense * 0.9:
+        trend = "decreasing"
+    else:
+        trend = "stable"
+    
+    # Calculate average daily expense
+    daily_expense = {"INR": expense_by_currency["INR"] / days, "USD": expense_by_currency["USD"] / days}
+    
+    # Find highest expense day
+    daily_totals = {}
+    for t in transactions:
+        if t["type"] == "expense":
+            date_key = t["date"].strftime("%Y-%m-%d")
+            daily_totals[date_key] = daily_totals.get(date_key, 0) + t["amount"]
+    
+    highest_expense_day = max(daily_totals.keys(), key=lambda k: daily_totals[k]) if daily_totals else None
+    
+    # Calculate savings rate
+    total_income = income_by_currency["INR"] + convert_currency(income_by_currency["USD"], "USD", "INR")
+    total_expense = expense_by_currency["INR"] + convert_currency(expense_by_currency["USD"], "USD", "INR")
+    savings_rate = ((total_income - total_expense) / total_income * 100) if total_income > 0 else 0
+    
+    return FinancialInsights(
+        total_income=income_by_currency,
+        total_expense=expense_by_currency,
+        net_amount=net_by_currency,
+        top_spending_categories=top_categories,
+        spending_trend=trend,
+        average_daily_expense=daily_expense,
+        highest_expense_day=highest_expense_day,
+        savings_rate=round(savings_rate, 2),
+        monthly_comparison={}  # Can be enhanced later
+    )
+
+@api_router.get("/analytics/category-breakdown")
+async def get_category_breakdown(current_user: dict = Depends(get_current_user)):
+    """Get category-wise spending breakdown for charts"""
+    # Get transactions for current month
+    now = datetime.utcnow()
+    start_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    
+    pipeline = [
+        {
+            "$match": {
+                "user_id": current_user["id"],
+                "date": {"$gte": start_of_month}
+            }
+        },
+        {
+            "$group": {
+                "_id": {
+                    "category": "$category",
+                    "type": "$type",
+                    "currency": {"$ifNull": ["$currency", "INR"]}
+                },
+                "total_amount": {"$sum": "$amount"},
+                "count": {"$sum": 1}
+            }
+        }
+    ]
+    
+    results = await db.transactions.aggregate(pipeline).to_list(100)
+    
+    # Calculate total for percentage calculation
+    total_by_type_currency = {}
+    for result in results:
+        type_currency = f"{result['_id']['type']}_{result['_id']['currency']}"
+        total_by_type_currency[type_currency] = total_by_type_currency.get(type_currency, 0) + result["total_amount"]
+    
+    # Format data for charts
+    chart_data = []
+    for result in results:
+        type_currency = f"{result['_id']['type']}_{result['_id']['currency']}"
+        total = total_by_type_currency[type_currency]
+        percentage = (result["total_amount"] / total * 100) if total > 0 else 0
+        
+        chart_data.append(CategoryChartData(
+            category=result["_id"]["category"],
+            type=result["_id"]["type"],
+            total_amount=result["total_amount"],
+            currency=result["_id"]["currency"],
+            percentage=round(percentage, 2),
+            transactions_count=result["count"]
+        ))
+    
+    return chart_data
+
+@api_router.get("/analytics/spending-trends")
+async def get_spending_trends(period: str = "daily", days: int = 30, current_user: dict = Depends(get_current_user)):
+    """Get spending trends for different periods"""
+    end_date = datetime.utcnow()
+    start_date = end_date - timedelta(days=days)
+    
+    if period == "daily":
+        pipeline = [
+            {
+                "$match": {
+                    "user_id": current_user["id"],
+                    "date": {"$gte": start_date, "$lte": end_date}
+                }
+            },
+            {
+                "$group": {
+                    "_id": {
+                        "year": {"$year": "$date"},
+                        "month": {"$month": "$date"},
+                        "day": {"$dayOfMonth": "$date"},
+                        "currency": {"$ifNull": ["$currency", "INR"]}
+                    },
+                    "income": {"$sum": {"$cond": [{"$eq": ["$type", "income"]}, "$amount", 0]}},
+                    "expense": {"$sum": {"$cond": [{"$eq": ["$type", "expense"]}, "$amount", 0]}}
+                }
+            },
+            {
+                "$sort": {"_id.year": 1, "_id.month": 1, "_id.day": 1}
+            }
+        ]
+    elif period == "weekly":
+        pipeline = [
+            {
+                "$match": {
+                    "user_id": current_user["id"],
+                    "date": {"$gte": start_date, "$lte": end_date}
+                }
+            },
+            {
+                "$group": {
+                    "_id": {
+                        "year": {"$year": "$date"},
+                        "week": {"$week": "$date"},
+                        "currency": {"$ifNull": ["$currency", "INR"]}
+                    },
+                    "income": {"$sum": {"$cond": [{"$eq": ["$type", "income"]}, "$amount", 0]}},
+                    "expense": {"$sum": {"$cond": [{"$eq": ["$type", "expense"]}, "$amount", 0]}}
+                }
+            },
+            {
+                "$sort": {"_id.year": 1, "_id.week": 1}
+            }
+        ]
+    else:  # monthly
+        pipeline = [
+            {
+                "$match": {
+                    "user_id": current_user["id"],
+                    "date": {"$gte": start_date, "$lte": end_date}
+                }
+            },
+            {
+                "$group": {
+                    "_id": {
+                        "year": {"$year": "$date"},
+                        "month": {"$month": "$date"},
+                        "currency": {"$ifNull": ["$currency", "INR"]}
+                    },
+                    "income": {"$sum": {"$cond": [{"$eq": ["$type", "income"]}, "$amount", 0]}},
+                    "expense": {"$sum": {"$cond": [{"$eq": ["$type", "expense"]}, "$amount", 0]}}
+                }
+            },
+            {
+                "$sort": {"_id.year": 1, "_id.month": 1}
+            }
+        ]
+    
+    results = await db.transactions.aggregate(pipeline).to_list(100)
+    
+    # Format data for charts
+    chart_data = []
+    for result in results:
+        if period == "daily":
+            date_str = f"{result['_id']['year']}-{result['_id']['month']:02d}-{result['_id']['day']:02d}"
+        elif period == "weekly":
+            date_str = f"{result['_id']['year']}-W{result['_id']['week']:02d}"
+        else:
+            date_str = f"{result['_id']['year']}-{result['_id']['month']:02d}"
+        
+        chart_data.append({
+            "date": date_str,
+            "income": result["income"],
+            "expense": result["expense"],
+            "net": result["income"] - result["expense"],
+            "currency": result["_id"]["currency"]
+        })
+    
+    return SpendingTrendData(
+        period=period,
+        data=chart_data
+    )
+
+@api_router.get("/analytics/budget-progress")
+async def get_budget_progress(month: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    """Get budget progress data for charts"""
+    if not month:
+        month = datetime.utcnow().strftime("%Y-%m")
+    
+    # Get budgets for the month
+    budgets = await db.budgets.find({
+        "user_id": current_user["id"],
+        "month": month
+    }).to_list(100)
+    
+    budget_progress = []
+    for budget in budgets:
+        # Calculate spent amount
+        start_date = datetime.strptime(month + "-01", "%Y-%m-%d")
+        if start_date.month == 12:
+            end_date = start_date.replace(year=start_date.year + 1, month=1)
+        else:
+            end_date = start_date.replace(month=start_date.month + 1)
+        
+        transactions = await db.transactions.find({
+            "user_id": current_user["id"],
+            "category": budget["category"],
+            "type": "expense",
+            "currency": budget.get("currency", "INR"),
+            "date": {"$gte": start_date, "$lt": end_date}
+        }).to_list(1000)
+        
+        spent_amount = sum(t["amount"] for t in transactions)
+        percentage_used = (spent_amount / budget["budget_amount"] * 100) if budget["budget_amount"] > 0 else 0
+        
+        budget_progress.append({
+            "category": budget["category"],
+            "budget_amount": budget["budget_amount"],
+            "spent_amount": spent_amount,
+            "remaining_amount": budget["budget_amount"] - spent_amount,
+            "percentage_used": round(percentage_used, 2),
+            "currency": budget.get("currency", "INR"),
+            "status": "over_budget" if percentage_used > 100 else "on_track" if percentage_used < 80 else "warning"
+        })
+    
+    return budget_progress
+
+@api_router.get("/currency/rates")
+async def get_currency_rates_endpoint():
+    """Get current currency conversion rates"""
+    return get_currency_rates()
+
+@api_router.post("/currency/convert")
+async def convert_currency_endpoint(amount: float, from_currency: Currency, to_currency: Currency):
+    """Convert amount between currencies"""
+    converted_amount = convert_currency(amount, from_currency, to_currency)
+    return {
+        "original_amount": amount,
+        "from_currency": from_currency,
+        "to_currency": to_currency,
+        "converted_amount": converted_amount,
+        "rate": CURRENCY_RATES.get((from_currency, to_currency), 1.0)
+    }
+
 # Basic routes
 @api_router.get("/")
 async def root():
