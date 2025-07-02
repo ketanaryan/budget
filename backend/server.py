@@ -144,6 +144,7 @@ class TransactionResponse(BaseModel):
     type: TransactionType
     category: TransactionCategory
     amount: float
+    currency: Currency
     description: str
     date: datetime
     tags: List[str]
