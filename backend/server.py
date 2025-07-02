@@ -132,6 +132,7 @@ class TransactionCreate(BaseModel):
     type: TransactionType
     category: TransactionCategory
     amount: float
+    currency: Currency = Currency.INR
     description: str
     date: Optional[datetime] = None
     tags: List[str] = Field(default_factory=list)
