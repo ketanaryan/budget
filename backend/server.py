@@ -619,6 +619,7 @@ async def get_budgets(month: Optional[str] = None, current_user: dict = Depends(
             "user_id": current_user["id"],
             "category": budget["category"],
             "type": "expense",
+            "currency": budget.get("currency", "INR"),
             "date": {"$gte": start_date, "$lt": end_date}
         }).to_list(1000)
         
@@ -630,6 +631,7 @@ async def get_budgets(month: Optional[str] = None, current_user: dict = Depends(
             id=budget["id"],
             category=budget["category"],
             budget_amount=budget["budget_amount"],
+            currency=budget.get("currency", "INR"),
             month=budget["month"],
             spent_amount=spent_amount,
             remaining_amount=remaining_amount,
