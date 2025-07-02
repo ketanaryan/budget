@@ -110,6 +110,7 @@ class BudgetResponse(BaseModel):
     id: str
     category: TransactionCategory
     budget_amount: float
+    currency: Currency
     month: str
     spent_amount: float
     remaining_amount: float
