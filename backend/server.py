@@ -119,6 +119,7 @@ class Transaction(BaseModel):
     type: TransactionType
     category: TransactionCategory
     amount: float
+    currency: Currency = Currency.INR
     description: str
     date: datetime = Field(default_factory=datetime.utcnow)
     tags: List[str] = Field(default_factory=list)
