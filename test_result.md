@@ -281,11 +281,7 @@ metadata:
   run_ui: false
 
 test_plan:
-  current_focus:
-    - "Enhanced Features - Recurring Transactions"
-    - "Enhanced Features - Budget Management"
-    - "Enhanced Features - Advanced Search & Filters"
-    - "Enhanced Features - Daily Trends Analytics"
+  current_focus: []
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
