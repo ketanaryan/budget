@@ -392,6 +392,26 @@ const TransactionForm = ({ onTransactionAdded }) => {
 
 const TransactionList = ({ transactions, onTransactionDeleted }) => {
   const { token } = useAuth();
+  const [editingTransaction, setEditingTransaction] = useState(null);
+  const [filterType, setFilterType] = useState('all');
+  const [filterCategory, setFilterCategory] = useState('all');
+
+  const categories = [
+    { value: 'salary', label: 'Salary' },
+    { value: 'freelance', label: 'Freelance' },
+    { value: 'business', label: 'Business' },
+    { value: 'investment', label: 'Investment' },
+    { value: 'other_income', label: 'Other Income' },
+    { value: 'food', label: 'Food & Dining' },
+    { value: 'transportation', label: 'Transportation' },
+    { value: 'housing', label: 'Housing' },
+    { value: 'utilities', label: 'Utilities' },
+    { value: 'entertainment', label: 'Entertainment' },
+    { value: 'healthcare', label: 'Healthcare' },
+    { value: 'education', label: 'Education' },
+    { value: 'shopping', label: 'Shopping' },
+    { value: 'other_expense', label: 'Other Expense' }
+  ];
 
   const handleDelete = async (transactionId) => {
     if (window.confirm('Are you sure you want to delete this transaction?')) {
@@ -405,6 +425,49 @@ const TransactionList = ({ transactions, onTransactionDeleted }) => {
       }
     }
   };
+
+  const handleEdit = (transaction) => {
+    setEditingTransaction({
+      ...transaction,
+      date: transaction.date.split('T')[0] // Format date for input
+    });
+  };
+
+  const handleUpdateTransaction = async (e) => {
+    e.preventDefault();
+    try {
+      const updatedData = {
+        type: editingTransaction.type,
+        category: editingTransaction.category,
+        amount: parseFloat(editingTransaction.amount),
+        description: editingTransaction.description,
+        date: new Date(editingTransaction.date).toISOString()
+      };
+
+      await axios.put(`${API}/transactions/${editingTransaction.id}`, updatedData, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      setEditingTransaction(null);
+      onTransactionDeleted(); // Refresh transactions
+    } catch (error) {
+      console.error('Error updating transaction:', error);
+    }
+  };
+
+  const handleEditChange = (e) => {
+    setEditingTransaction({
+      ...editingTransaction,
+      [e.target.name]: e.target.value
+    });
+  };
+
+  // Filter transactions based on selected filters
+  const filteredTransactions = transactions.filter(transaction => {
+    const typeMatch = filterType === 'all' || transaction.type === filterType;
+    const categoryMatch = filterCategory === 'all' || transaction.category === filterCategory;
+    return typeMatch && categoryMatch;
+  });
 
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-IN', {
