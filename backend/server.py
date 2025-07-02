@@ -186,6 +186,35 @@ class SearchFilters(BaseModel):
     max_amount: Optional[float] = None
     tags: List[str] = Field(default_factory=list)
 
+class FinancialInsights(BaseModel):
+    total_income: Dict[str, float]  # {"INR": amount, "USD": amount}
+    total_expense: Dict[str, float]
+    net_amount: Dict[str, float]
+    top_spending_categories: List[Dict[str, Any]]
+    spending_trend: str  # "increasing", "decreasing", "stable"
+    average_daily_expense: Dict[str, float]
+    highest_expense_day: Optional[str]
+    savings_rate: float  # percentage
+    monthly_comparison: Dict[str, Any]
+
+class CategoryChartData(BaseModel):
+    category: TransactionCategory
+    type: TransactionType
+    total_amount: float
+    currency: Currency
+    percentage: float
+    transactions_count: int
+
+class SpendingTrendData(BaseModel):
+    period: str  # "daily", "weekly", "monthly"
+    data: List[Dict[str, Any]]
+
+class CurrencyRate(BaseModel):
+    from_currency: Currency
+    to_currency: Currency
+    rate: float
+    last_updated: datetime
+
 # Utility functions
 def verify_password(plain_password, hashed_password):
     return pwd_context.verify(plain_password, hashed_password)
