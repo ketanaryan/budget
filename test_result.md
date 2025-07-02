@@ -143,15 +143,18 @@ backend:
 
   - task: "Enhanced Features - Recurring Transactions"
     implemented: true
-    working: "NA"
+    working: true
     file: "/app/backend/server.py"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: "NA"
         agent: "main"
         comment: "Implemented recurring transactions with daily, weekly, monthly, yearly options and auto-generation endpoint"
+      - working: true
+        agent: "testing"
+        comment: "Successfully tested recurring transactions with all recurrence types (daily, weekly, monthly, yearly). Next occurrence dates are calculated correctly for each type. The process-recurring endpoint works as expected, creating non-recurring copies and updating next occurrence dates."
 
   - task: "Enhanced Features - Budget Management"
     implemented: true
