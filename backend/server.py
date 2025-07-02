@@ -232,6 +232,36 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
+# Currency conversion rates (in production, this would be fetched from an API)
+CURRENCY_RATES = {
+    ("USD", "INR"): 83.50,  # 1 USD = 83.50 INR
+    ("INR", "USD"): 0.012,  # 1 INR = 0.012 USD
+    ("USD", "USD"): 1.0,
+    ("INR", "INR"): 1.0
+}
+
+def convert_currency(amount: float, from_currency: Currency, to_currency: Currency) -> float:
+    """Convert amount from one currency to another"""
+    if from_currency == to_currency:
+        return amount
+    
+    rate = CURRENCY_RATES.get((from_currency, to_currency))
+    if rate:
+        return round(amount * rate, 2)
+    else:
+        # If direct rate not available, convert via base currency
+        usd_rate = CURRENCY_RATES.get((from_currency, "USD"), 1.0)
+        target_rate = CURRENCY_RATES.get(("USD", to_currency), 1.0)
+        return round(amount * usd_rate * target_rate, 2)
+
+def get_currency_rates():
+    """Get current currency rates"""
+    return {
+        "USD_to_INR": CURRENCY_RATES[("USD", "INR")],
+        "INR_to_USD": CURRENCY_RATES[("INR", "USD")],
+        "last_updated": datetime.utcnow()
+    }
+
 def calculate_next_occurrence(date: datetime, recurrence_type: RecurrenceType) -> Optional[datetime]:
     if recurrence_type == RecurrenceType.NONE:
         return None
