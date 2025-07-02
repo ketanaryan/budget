@@ -27,6 +27,8 @@ class BudgetPlannerAPITest(unittest.TestCase):
         cls.auth_token = None
         cls.auth_token2 = None
         cls.created_transaction_ids = []
+        cls.created_recurring_transaction_ids = []
+        cls.created_budget_ids = []
         
         # Income categories
         cls.income_categories = [
@@ -37,6 +39,11 @@ class BudgetPlannerAPITest(unittest.TestCase):
         cls.expense_categories = [
             "food", "transportation", "housing", "utilities", 
             "entertainment", "healthcare", "education", "shopping", "other_expense"
+        ]
+        
+        # Recurrence types
+        cls.recurrence_types = [
+            "daily", "weekly", "monthly", "yearly"
         ]
         
         print(f"Testing against backend URL: {BACKEND_URL}")
@@ -369,7 +376,547 @@ class BudgetPlannerAPITest(unittest.TestCase):
         
         print(f"Successfully retrieved category summary with {len(data)} categories")
 
-    def test_10_delete_transaction(self):
+    def test_10_create_transactions_with_tags(self):
+        """Test creating transactions with tags"""
+        print("\n=== Testing Transaction Creation with Tags ===")
+        
+        headers = {"Authorization": f"Bearer {self.__class__.auth_token}"}
+        
+        # Create transactions with tags
+        test_tags = [
+            ["essential", "monthly"],
+            ["entertainment", "weekend", "friends"],
+            ["health", "important"],
+            ["shopping", "online", "discount"]
+        ]
+        
+        for i, tags in enumerate(test_tags):
+            transaction = {
+                "type": "expense",
+                "category": random.choice(self.expense_categories),
+                "amount": round(random.uniform(500, 5000), 2),
+                "description": f"Test transaction with tags {', '.join(tags)}",
+                "date": datetime.utcnow().isoformat(),
+                "tags": tags
+            }
+            
+            response = requests.post(
+                f"{BACKEND_URL}/transactions",
+                headers=headers,
+                json=transaction
+            )
+            
+            self.assertEqual(response.status_code, 200, f"Create transaction with tags failed: {response.text}")
+            data = response.json()
+            self.__class__.created_transaction_ids.append(data["id"])
+            
+            # Verify the tags were saved correctly
+            self.assertEqual(data["tags"], tags, "Tags mismatch")
+            print(f"Successfully created transaction with tags: {tags}")
+        
+        # Retrieve transactions and verify tags are present
+        response = requests.get(
+            f"{BACKEND_URL}/transactions",
+            headers=headers
+        )
+        
+        self.assertEqual(response.status_code, 200, f"Get transactions failed: {response.text}")
+        data = response.json()
+        
+        # Find the transactions we just created and verify tags
+        for transaction in data:
+            if transaction["id"] in self.__class__.created_transaction_ids[-len(test_tags):]:
+                self.assertIn("tags", transaction, "Tags field missing")
+                self.assertIsInstance(transaction["tags"], list, "Tags should be a list")
+                print(f"Retrieved transaction has tags: {transaction['tags']}")
+        
+        print("Tags are correctly stored and retrieved")
+
+    def test_11_recurring_transactions(self):
+        """Test creating recurring transactions with different recurrence types"""
+        print("\n=== Testing Recurring Transactions ===")
+        
+        headers = {"Authorization": f"Bearer {self.__class__.auth_token}"}
+        
+        # Test each recurrence type
+        for recurrence_type in self.recurrence_types:
+            # Create a recurring transaction
+            transaction = {
+                "type": "expense",
+                "category": random.choice(self.expense_categories),
+                "amount": round(random.uniform(1000, 10000), 2),
+                "description": f"Recurring {recurrence_type} expense",
+                "date": datetime.utcnow().isoformat(),
+                "is_recurring": True,
+                "recurrence_type": recurrence_type
+            }
+            
+            response = requests.post(
+                f"{BACKEND_URL}/transactions",
+                headers=headers,
+                json=transaction
+            )
+            
+            self.assertEqual(response.status_code, 200, f"Create recurring transaction failed: {response.text}")
+            data = response.json()
+            self.__class__.created_recurring_transaction_ids.append(data["id"])
+            
+            # Verify recurring transaction fields
+            self.assertEqual(data["is_recurring"], True, "is_recurring should be True")
+            self.assertEqual(data["recurrence_type"], recurrence_type, "recurrence_type mismatch")
+            self.assertIsNotNone(data["next_occurrence"], "next_occurrence should not be None")
+            
+            # Verify next_occurrence is calculated correctly
+            transaction_date = datetime.fromisoformat(data["date"].replace("Z", "+00:00"))
+            next_occurrence = datetime.fromisoformat(data["next_occurrence"].replace("Z", "+00:00"))
+            
+            if recurrence_type == "daily":
+                expected_next = transaction_date + timedelta(days=1)
+                self.assertEqual(next_occurrence.date(), expected_next.date(), "Daily next_occurrence incorrect")
+            elif recurrence_type == "weekly":
+                expected_next = transaction_date + timedelta(weeks=1)
+                self.assertEqual(next_occurrence.date(), expected_next.date(), "Weekly next_occurrence incorrect")
+            elif recurrence_type == "monthly":
+                if transaction_date.month == 12:
+                    expected_next = transaction_date.replace(year=transaction_date.year + 1, month=1)
+                else:
+                    expected_next = transaction_date.replace(month=transaction_date.month + 1)
+                self.assertEqual(next_occurrence.date(), expected_next.date(), "Monthly next_occurrence incorrect")
+            elif recurrence_type == "yearly":
+                expected_next = transaction_date.replace(year=transaction_date.year + 1)
+                self.assertEqual(next_occurrence.date(), expected_next.date(), "Yearly next_occurrence incorrect")
+            
+            print(f"Successfully created {recurrence_type} recurring transaction with next occurrence on {next_occurrence.date()}")
+        
+        # Test creating a transaction with invalid recurrence type
+        transaction = {
+            "type": "expense",
+            "category": "food",
+            "amount": 1000,
+            "description": "Invalid recurring transaction",
+            "is_recurring": True,
+            "recurrence_type": "invalid_type"
+        }
+        
+        response = requests.post(
+            f"{BACKEND_URL}/transactions",
+            headers=headers,
+            json=transaction
+        )
+        
+        self.assertNotEqual(response.status_code, 200, "Creating transaction with invalid recurrence type should fail")
+        print("Invalid recurrence type correctly rejected")
+
+    def test_12_process_recurring_transactions(self):
+        """Test processing recurring transactions"""
+        print("\n=== Testing Process Recurring Transactions ===")
+        
+        # Call the process-recurring endpoint
+        response = requests.post(
+            f"{BACKEND_URL}/transactions/process-recurring"
+        )
+        
+        self.assertEqual(response.status_code, 200, f"Process recurring transactions failed: {response.text}")
+        data = response.json()
+        self.assertIn("message", data, "Response should contain a message")
+        print(f"Process recurring transactions response: {data['message']}")
+        
+        # Get all transactions to verify new ones were created
+        headers = {"Authorization": f"Bearer {self.__class__.auth_token}"}
+        response = requests.get(
+            f"{BACKEND_URL}/transactions",
+            headers=headers
+        )
+        
+        self.assertEqual(response.status_code, 200, f"Get transactions failed: {response.text}")
+        transactions = response.json()
+        
+        # Check if auto-generated transactions exist
+        auto_generated_count = 0
+        for transaction in transactions:
+            if "(Auto-generated)" in transaction.get("description", ""):
+                auto_generated_count += 1
+                self.assertEqual(transaction["is_recurring"], False, "Auto-generated transaction should not be recurring")
+                print(f"Found auto-generated transaction: {transaction['description']}")
+        
+        print(f"Found {auto_generated_count} auto-generated transactions")
+        
+        # Check if original recurring transactions have updated next_occurrence
+        for transaction_id in self.__class__.created_recurring_transaction_ids:
+            found = False
+            for transaction in transactions:
+                if transaction["id"] == transaction_id:
+                    found = True
+                    self.assertEqual(transaction["is_recurring"], True, "Original transaction should still be recurring")
+                    self.assertIsNotNone(transaction["next_occurrence"], "next_occurrence should not be None")
+                    print(f"Original recurring transaction {transaction_id} has next occurrence: {transaction['next_occurrence']}")
+                    break
+            
+            self.assertTrue(found, f"Original recurring transaction {transaction_id} not found")
+
+    def test_13_budget_management(self):
+        """Test budget management system"""
+        print("\n=== Testing Budget Management ===")
+        
+        headers = {"Authorization": f"Bearer {self.__class__.auth_token}"}
+        current_month = datetime.utcnow().strftime("%Y-%m")
+        
+        # Create budgets for different expense categories
+        for category in self.expense_categories[:3]:  # Test with first 3 categories
+            budget_amount = round(random.uniform(5000, 20000), 2)
+            budget = {
+                "category": category,
+                "budget_amount": budget_amount,
+                "month": current_month
+            }
+            
+            response = requests.post(
+                f"{BACKEND_URL}/budgets",
+                headers=headers,
+                json=budget
+            )
+            
+            self.assertEqual(response.status_code, 200, f"Create budget failed: {response.text}")
+            data = response.json()
+            self.__class__.created_budget_ids.append(data["id"])
+            
+            # Verify budget fields
+            self.assertEqual(data["category"], category, "Budget category mismatch")
+            self.assertEqual(data["budget_amount"], budget_amount, "Budget amount mismatch")
+            self.assertEqual(data["month"], current_month, "Budget month mismatch")
+            self.assertIn("spent_amount", data, "spent_amount field missing")
+            self.assertIn("remaining_amount", data, "remaining_amount field missing")
+            self.assertIn("percentage_used", data, "percentage_used field missing")
+            
+            # Verify calculations
+            self.assertEqual(data["remaining_amount"], budget_amount - data["spent_amount"], 
+                           "remaining_amount calculation incorrect")
+            
+            expected_percentage = (data["spent_amount"] / budget_amount * 100) if budget_amount > 0 else 0
+            self.assertAlmostEqual(data["percentage_used"], expected_percentage, places=2, 
+                                 msg="percentage_used calculation incorrect")
+            
+            print(f"Successfully created budget for {category}: ₹{budget_amount} ({data['percentage_used']:.2f}% used)")
+        
+        # Test retrieving budgets with month filter
+        response = requests.get(
+            f"{BACKEND_URL}/budgets?month={current_month}",
+            headers=headers
+        )
+        
+        self.assertEqual(response.status_code, 200, f"Get budgets failed: {response.text}")
+        data = response.json()
+        
+        # Verify we have the budgets we created
+        self.assertGreaterEqual(len(data), len(self.__class__.created_budget_ids), 
+                              "Not all created budgets were retrieved")
+        
+        retrieved_ids = [budget["id"] for budget in data]
+        for budget_id in self.__class__.created_budget_ids:
+            self.assertIn(budget_id, retrieved_ids, f"Budget {budget_id} not found")
+        
+        print(f"Successfully retrieved {len(data)} budgets for {current_month}")
+        
+        # Test updating an existing budget
+        if self.__class__.created_budget_ids:
+            # Get the first budget we created
+            budget_id = self.__class__.created_budget_ids[0]
+            budget_data = next((b for b in data if b["id"] == budget_id), None)
+            
+            if budget_data:
+                # Update the budget amount
+                new_amount = budget_data["budget_amount"] + 5000
+                update_budget = {
+                    "category": budget_data["category"],
+                    "budget_amount": new_amount,
+                    "month": budget_data["month"]
+                }
+                
+                response = requests.post(
+                    f"{BACKEND_URL}/budgets",
+                    headers=headers,
+                    json=update_budget
+                )
+                
+                self.assertEqual(response.status_code, 200, f"Update budget failed: {response.text}")
+                updated_data = response.json()
+                
+                # Verify the budget was updated
+                self.assertEqual(updated_data["id"], budget_id, "Budget ID should not change on update")
+                self.assertEqual(updated_data["budget_amount"], new_amount, "Budget amount not updated")
+                
+                print(f"Successfully updated budget for {budget_data['category']} from ₹{budget_data['budget_amount']} to ₹{new_amount}")
+        
+        # Test overspending scenario by creating an expense that exceeds the budget
+        if self.__class__.created_budget_ids:
+            # Get the first budget we created
+            budget_id = self.__class__.created_budget_ids[0]
+            budget_data = next((b for b in data if b["id"] == budget_id), None)
+            
+            if budget_data:
+                # Create an expense that exceeds the budget
+                transaction = {
+                    "type": "expense",
+                    "category": budget_data["category"],
+                    "amount": budget_data["budget_amount"] * 1.5,  # 150% of budget
+                    "description": "Overspending test transaction",
+                    "date": datetime.utcnow().isoformat()
+                }
+                
+                response = requests.post(
+                    f"{BACKEND_URL}/transactions",
+                    headers=headers,
+                    json=transaction
+                )
+                
+                self.assertEqual(response.status_code, 200, f"Create overspending transaction failed: {response.text}")
+                transaction_data = response.json()
+                self.__class__.created_transaction_ids.append(transaction_data["id"])
+                
+                # Get the budget again to check if spent_amount and percentage_used are updated
+                response = requests.get(
+                    f"{BACKEND_URL}/budgets?month={current_month}",
+                    headers=headers
+                )
+                
+                self.assertEqual(response.status_code, 200, f"Get budgets after overspending failed: {response.text}")
+                updated_budgets = response.json()
+                
+                # Find our budget
+                updated_budget = next((b for b in updated_budgets if b["id"] == budget_id), None)
+                
+                if updated_budget:
+                    # Verify overspending is reflected
+                    self.assertGreater(updated_budget["spent_amount"], updated_budget["budget_amount"], 
+                                     "spent_amount should exceed budget_amount")
+                    self.assertLess(updated_budget["remaining_amount"], 0, 
+                                  "remaining_amount should be negative")
+                    self.assertGreater(updated_budget["percentage_used"], 100, 
+                                     "percentage_used should exceed 100%")
+                    
+                    print(f"Overspending correctly reflected: spent ₹{updated_budget['spent_amount']} of ₹{updated_budget['budget_amount']} budget ({updated_budget['percentage_used']:.2f}%)")
+
+    def test_14_advanced_search(self):
+        """Test advanced search and filtering"""
+        print("\n=== Testing Advanced Search & Filtering ===")
+        
+        headers = {"Authorization": f"Bearer {self.__class__.auth_token}"}
+        
+        # 1. Test text search in description
+        search_term = "test"
+        response = requests.post(
+            f"{BACKEND_URL}/transactions/search",
+            headers=headers,
+            json={"query": search_term}
+        )
+        
+        self.assertEqual(response.status_code, 200, f"Search by description failed: {response.text}")
+        data = response.json()
+        
+        # Verify results contain the search term
+        for transaction in data:
+            self.assertIn(search_term.lower(), transaction["description"].lower(), 
+                        f"Transaction description does not contain search term: {transaction['description']}")
+        
+        print(f"Successfully searched for '{search_term}' in descriptions, found {len(data)} matches")
+        
+        # 2. Test filtering by category
+        category = random.choice(self.expense_categories)
+        response = requests.post(
+            f"{BACKEND_URL}/transactions/search",
+            headers=headers,
+            json={"category": category}
+        )
+        
+        self.assertEqual(response.status_code, 200, f"Filter by category failed: {response.text}")
+        data = response.json()
+        
+        # Verify results have the correct category
+        for transaction in data:
+            self.assertEqual(transaction["category"], category, 
+                           f"Transaction category mismatch: {transaction['category']} != {category}")
+        
+        print(f"Successfully filtered by category '{category}', found {len(data)} matches")
+        
+        # 3. Test filtering by type
+        transaction_type = "expense"
+        response = requests.post(
+            f"{BACKEND_URL}/transactions/search",
+            headers=headers,
+            json={"type": transaction_type}
+        )
+        
+        self.assertEqual(response.status_code, 200, f"Filter by type failed: {response.text}")
+        data = response.json()
+        
+        # Verify results have the correct type
+        for transaction in data:
+            self.assertEqual(transaction["type"], transaction_type, 
+                           f"Transaction type mismatch: {transaction['type']} != {transaction_type}")
+        
+        print(f"Successfully filtered by type '{transaction_type}', found {len(data)} matches")
+        
+        # 4. Test date range filtering
+        end_date = datetime.utcnow()
+        start_date = end_date - timedelta(days=30)
+        
+        response = requests.post(
+            f"{BACKEND_URL}/transactions/search",
+            headers=headers,
+            json={
+                "start_date": start_date.isoformat(),
+                "end_date": end_date.isoformat()
+            }
+        )
+        
+        self.assertEqual(response.status_code, 200, f"Filter by date range failed: {response.text}")
+        data = response.json()
+        
+        # Verify results are within the date range
+        for transaction in data:
+            transaction_date = datetime.fromisoformat(transaction["date"].replace("Z", "+00:00"))
+            self.assertGreaterEqual(transaction_date, start_date, 
+                                  f"Transaction date {transaction_date} before start date {start_date}")
+            self.assertLessEqual(transaction_date, end_date, 
+                               f"Transaction date {transaction_date} after end date {end_date}")
+        
+        print(f"Successfully filtered by date range {start_date.date()} to {end_date.date()}, found {len(data)} matches")
+        
+        # 5. Test amount range filtering
+        min_amount = 1000
+        max_amount = 10000
+        
+        response = requests.post(
+            f"{BACKEND_URL}/transactions/search",
+            headers=headers,
+            json={
+                "min_amount": min_amount,
+                "max_amount": max_amount
+            }
+        )
+        
+        self.assertEqual(response.status_code, 200, f"Filter by amount range failed: {response.text}")
+        data = response.json()
+        
+        # Verify results are within the amount range
+        for transaction in data:
+            self.assertGreaterEqual(transaction["amount"], min_amount, 
+                                  f"Transaction amount {transaction['amount']} below min amount {min_amount}")
+            self.assertLessEqual(transaction["amount"], max_amount, 
+                               f"Transaction amount {transaction['amount']} above max amount {max_amount}")
+        
+        print(f"Successfully filtered by amount range ₹{min_amount} to ₹{max_amount}, found {len(data)} matches")
+        
+        # 6. Test tag-based filtering
+        if hasattr(self, 'test_tags') and self.test_tags:
+            tag = self.test_tags[0][0]  # Use the first tag from our test
+        else:
+            tag = "essential"  # Fallback tag
+            
+        response = requests.post(
+            f"{BACKEND_URL}/transactions/search",
+            headers=headers,
+            json={"tags": [tag]}
+        )
+        
+        self.assertEqual(response.status_code, 200, f"Filter by tag failed: {response.text}")
+        data = response.json()
+        
+        # Verify results contain the tag
+        for transaction in data:
+            self.assertIn(tag, transaction["tags"], 
+                        f"Transaction tags {transaction['tags']} do not include {tag}")
+        
+        print(f"Successfully filtered by tag '{tag}', found {len(data)} matches")
+        
+        # 7. Test complex filter combination
+        complex_filter = {
+            "type": "expense",
+            "min_amount": 500,
+            "max_amount": 15000,
+            "start_date": (datetime.utcnow() - timedelta(days=60)).isoformat(),
+            "end_date": datetime.utcnow().isoformat()
+        }
+        
+        response = requests.post(
+            f"{BACKEND_URL}/transactions/search",
+            headers=headers,
+            json=complex_filter
+        )
+        
+        self.assertEqual(response.status_code, 200, f"Complex filter failed: {response.text}")
+        data = response.json()
+        
+        # Verify results match all criteria
+        for transaction in data:
+            self.assertEqual(transaction["type"], complex_filter["type"], "Transaction type mismatch")
+            self.assertGreaterEqual(transaction["amount"], complex_filter["min_amount"], "Transaction amount below min")
+            self.assertLessEqual(transaction["amount"], complex_filter["max_amount"], "Transaction amount above max")
+            
+            transaction_date = datetime.fromisoformat(transaction["date"].replace("Z", "+00:00"))
+            start_date = datetime.fromisoformat(complex_filter["start_date"].replace("Z", "+00:00") if "Z" in complex_filter["start_date"] else complex_filter["start_date"])
+            end_date = datetime.fromisoformat(complex_filter["end_date"].replace("Z", "+00:00") if "Z" in complex_filter["end_date"] else complex_filter["end_date"])
+            
+            self.assertGreaterEqual(transaction_date, start_date, "Transaction date before start date")
+            self.assertLessEqual(transaction_date, end_date, "Transaction date after end date")
+        
+        print(f"Successfully applied complex filter, found {len(data)} matches")
+
+    def test_15_daily_trends(self):
+        """Test daily trends analytics"""
+        print("\n=== Testing Daily Trends Analytics ===")
+        
+        headers = {"Authorization": f"Bearer {self.__class__.auth_token}"}
+        
+        # Test with default 30 days
+        response = requests.get(
+            f"{BACKEND_URL}/transactions/trends/daily",
+            headers=headers
+        )
+        
+        self.assertEqual(response.status_code, 200, f"Get daily trends failed: {response.text}")
+        data = response.json()
+        
+        # Verify the structure of the trend data
+        for trend in data:
+            self.assertIn("date", trend, "Date field missing")
+            self.assertIn("income", trend, "Income field missing")
+            self.assertIn("expense", trend, "Expense field missing")
+            self.assertIn("net", trend, "Net field missing")
+            
+            # Verify calculations
+            self.assertEqual(trend["net"], trend["income"] - trend["expense"], 
+                           "Net calculation is incorrect")
+            
+            # Verify date format
+            self.assertRegex(trend["date"], r"^\d{4}-\d{2}-\d{2}$", 
+                           f"Date format incorrect: {trend['date']}")
+        
+        print(f"Successfully retrieved daily trends for default 30 days, got {len(data)} days")
+        
+        # Test with custom days parameter
+        custom_days = 7
+        response = requests.get(
+            f"{BACKEND_URL}/transactions/trends/daily?days={custom_days}",
+            headers=headers
+        )
+        
+        self.assertEqual(response.status_code, 200, f"Get daily trends with custom days failed: {response.text}")
+        data = response.json()
+        
+        # We might not have data for all days, so we can't assert exact length
+        print(f"Successfully retrieved daily trends for {custom_days} days, got {len(data)} days with data")
+        
+        # Verify data is sorted chronologically
+        if len(data) > 1:
+            for i in range(1, len(data)):
+                prev_date = datetime.strptime(data[i-1]["date"], "%Y-%m-%d")
+                curr_date = datetime.strptime(data[i]["date"], "%Y-%m-%d")
+                self.assertLessEqual(prev_date, curr_date, "Dates are not in chronological order")
+            
+            print("Daily trends data is correctly sorted chronologically")
+
+    def test_16_delete_transaction(self):
         """Test transaction deletion"""
         print("\n=== Testing Transaction Deletion ===")
         
