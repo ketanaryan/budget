@@ -96,6 +96,7 @@ class Budget(BaseModel):
     user_id: str
     category: TransactionCategory
     budget_amount: float
+    currency: Currency = Currency.INR
     month: str  # Format: "YYYY-MM"
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
